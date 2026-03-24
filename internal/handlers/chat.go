@@ -39,25 +39,31 @@ func ShowChat(c *fiber.Ctx) error {
 		return c.Redirect("/")
 	}
 
-	// Get all users except current
-	var contacts []models.User
-	database.DB.Where("id != ?", userID).Order("username ASC").Find(&contacts)
+	type ContactView struct {
+		ID            uint
+		Username      string
+		Online        bool
+		UnreadCount   int64
+		LastMessageAt time.Time
+	}
+
+	var contactViews []ContactView
+
+	// Query to get contacts with unread counts and last message time
+	// We use a subquery/join approach to get all users and their interaction status with the current user
+	database.DB.Table("users").
+		Select("users.id, users.username, "+
+			"(SELECT COUNT(*) FROM messages WHERE messages.receiver_id = ? AND messages.sender_id = users.id AND messages.is_read = false) as unread_count, "+
+			"(SELECT MAX(created_at) FROM messages WHERE (messages.sender_id = ? AND messages.receiver_id = users.id) OR (messages.sender_id = users.id AND messages.receiver_id = ?)) as last_message_at",
+			userID, userID, userID).
+		Where("users.id != ?", userID).
+		Order("unread_count DESC, last_message_at DESC").
+		Scan(&contactViews)
 
 	// Get online user IDs
 	onlineIDs := ChatHub.OnlineUserIDs()
-
-	type ContactView struct {
-		ID       uint
-		Username string
-		Online   bool
-	}
-	contactViews := make([]ContactView, len(contacts))
-	for i, u := range contacts {
-		contactViews[i] = ContactView{
-			ID:       u.ID,
-			Username: u.Username,
-			Online:   onlineIDs[u.ID],
-		}
+	for i := range contactViews {
+		contactViews[i].Online = onlineIDs[contactViews[i].ID]
 	}
 
 	return c.Render("chat", fiber.Map{
@@ -79,6 +85,11 @@ func ShowConversation(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid user ID")
 	}
 
+	// Mark messages as read
+	database.DB.Model(&models.Message{}).
+		Where("receiver_id = ? AND sender_id = ? AND is_read = false", userID, partnerID).
+		Update("is_read", true)
+
 	// Get partner info
 	var partner models.User
 	if err := database.DB.First(&partner, partnerID).Error; err != nil {
@@ -95,10 +106,10 @@ func ShowConversation(c *fiber.Ctx) error {
 		Find(&messages)
 
 	return c.Render("conversation", fiber.Map{
-		"UserID":     userID,
-		"PartnerID":  partner.ID,
+		"UserID":      userID,
+		"PartnerID":   partner.ID,
 		"PartnerName": partner.Username,
-		"Messages":   messages,
+		"Messages":    messages,
 	})
 }
 
@@ -125,6 +136,7 @@ func SendMessage(c *fiber.Ctx) error {
 		SenderID:   userID,
 		ReceiverID: uint(receiverID),
 		Content:    content,
+		IsRead:     false,
 		CreatedAt:  time.Now(),
 	}
 	database.DB.Create(&msg)
@@ -196,10 +208,10 @@ func buildMessageHTML(msg models.Message, viewerID uint, oob bool) string {
 	isMine := msg.SenderID == viewerID
 
 	bubbleClass := "message-theirs"
-	alignClass := "justify-start"
+	rowClass := "flex-row"
 	if isMine {
 		bubbleClass = "message-mine"
-		alignClass = "justify-end"
+		rowClass = "flex-row-reverse"
 	}
 
 	oobAttr := ""
@@ -217,6 +229,6 @@ func buildMessageHTML(msg models.Message, viewerID uint, oob bool) string {
 				<div class="message-content">%s</div>
 			</div>
 		</div>`,
-		msg.ID, alignClass, oobAttr, bubbleClass, escapedUser, timeStr, escapedContent,
+		msg.ID, rowClass, oobAttr, bubbleClass, escapedUser, timeStr, escapedContent,
 	)
 }

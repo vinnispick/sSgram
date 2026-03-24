@@ -8,6 +8,7 @@ import (
 	"ssgram/internal/models"
 
 	"github.com/gofiber/fiber/v2"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ShowLogin renders the login page or redirects to chat if already logged in.
@@ -18,18 +19,45 @@ func ShowLogin(c *fiber.Ctx) error {
 	return c.Render("index", fiber.Map{})
 }
 
-// Login finds or creates the user and sets session cookies.
+// Login finds or verifies the user and sets session cookies.
 func Login(c *fiber.Ctx) error {
 	username := c.FormValue("username")
-	if username == "" {
+	password := c.FormValue("password")
+
+	if username == "" || password == "" {
+		if c.Get("HX-Request") != "" {
+			return c.Status(fiber.StatusBadRequest).SendString("Username and password required")
+		}
 		return c.Redirect("/")
 	}
 
-	// FirstOrCreate — find existing user or create new one
 	var user models.User
-	database.DB.Where("username = ?", username).FirstOrCreate(&user, models.User{
-		Username: username,
-	})
+	result := database.DB.Where("username = ?", username).First(&user)
+
+	if result.Error == nil {
+		// User exists, check password
+		err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+		if err != nil {
+			if c.Get("HX-Request") != "" {
+				return c.SendString(`<div id="error-message" class="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded-lg text-sm mb-4 animate-pulse">Invalid password</div>`)
+			}
+			return c.Status(fiber.StatusUnauthorized).SendString("Invalid password")
+		}
+	} else {
+		// User doesn't exist, create new
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("Error securing password")
+		}
+
+		user = models.User{
+			Username:     username,
+			PasswordHash: string(hash),
+		}
+		if err := database.DB.Create(&user).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("Error creating user")
+		}
+	}
 
 	// Set cookies
 	expiry := time.Now().Add(24 * 7 * time.Hour)
@@ -49,6 +77,10 @@ func Login(c *fiber.Ctx) error {
 		SameSite: "Lax",
 	})
 
+	if c.Get("HX-Request") != "" {
+		c.Set("HX-Redirect", "/chat")
+		return c.SendStatus(fiber.StatusOK)
+	}
 	return c.Redirect("/chat")
 }
 
