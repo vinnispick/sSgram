@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"strconv"
 	"time"
 
 	"ssgram/internal/database"
@@ -17,60 +18,148 @@ import (
 // ChatHub is the global WebSocket hub reference (set from main).
 var ChatHub *ws.Hub
 
-// ShowChat renders the chat page with message history.
-func ShowChat(c *fiber.Ctx) error {
+// getCurrentUser extracts the current user from cookies.
+func getCurrentUser(c *fiber.Ctx) (uint, string) {
+	idStr := c.Cookies("user_id")
 	username := c.Cookies("username")
-	if username == "" {
+	if idStr == "" || username == "" {
+		return 0, ""
+	}
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return 0, ""
+	}
+	return uint(id), username
+}
+
+// ShowChat renders the main layout with contact sidebar.
+func ShowChat(c *fiber.Ctx) error {
+	userID, username := getCurrentUser(c)
+	if userID == 0 {
 		return c.Redirect("/")
 	}
 
-	// Load last 50 messages
-	var messages []models.Message
-	database.DB.Order("created_at ASC").Limit(50).Find(&messages)
+	// Get all users except current
+	var contacts []models.User
+	database.DB.Where("id != ?", userID).Order("username ASC").Find(&contacts)
+
+	// Get online user IDs
+	onlineIDs := ChatHub.OnlineUserIDs()
+
+	type ContactView struct {
+		ID       uint
+		Username string
+		Online   bool
+	}
+	contactViews := make([]ContactView, len(contacts))
+	for i, u := range contacts {
+		contactViews[i] = ContactView{
+			ID:       u.ID,
+			Username: u.Username,
+			Online:   onlineIDs[u.ID],
+		}
+	}
 
 	return c.Render("chat", fiber.Map{
+		"UserID":   userID,
 		"Username": username,
-		"Messages": messages,
+		"Contacts": contactViews,
 	})
 }
 
-// SendMessage saves a message to the DB and broadcasts it via WebSocket.
-func SendMessage(c *fiber.Ctx) error {
-	username := c.Cookies("username")
-	if username == "" {
+// ShowConversation returns the HTMX partial for a 1-on-1 conversation.
+func ShowConversation(c *fiber.Ctx) error {
+	userID, _ := getCurrentUser(c)
+	if userID == 0 {
 		return c.Status(fiber.StatusUnauthorized).SendString("Not logged in")
 	}
 
+	partnerID, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid user ID")
+	}
+
+	// Get partner info
+	var partner models.User
+	if err := database.DB.First(&partner, partnerID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).SendString("User not found")
+	}
+
+	// Fetch messages between the two users
+	var messages []models.Message
+	database.DB.Preload("Sender").
+		Where("(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
+			userID, partnerID, partnerID, userID).
+		Order("created_at ASC").
+		Limit(100).
+		Find(&messages)
+
+	return c.Render("conversation", fiber.Map{
+		"UserID":     userID,
+		"PartnerID":  partner.ID,
+		"PartnerName": partner.Username,
+		"Messages":   messages,
+	})
+}
+
+// SendMessage saves a message and delivers it to sender + receiver.
+func SendMessage(c *fiber.Ctx) error {
+	userID, _ := getCurrentUser(c)
+	if userID == 0 {
+		return c.Status(fiber.StatusUnauthorized).SendString("Not logged in")
+	}
+
+	receiverIDStr := c.FormValue("receiver_id")
 	content := c.FormValue("content")
-	if content == "" {
+	if receiverIDStr == "" || content == "" {
 		return c.SendStatus(fiber.StatusNoContent)
+	}
+
+	receiverID, err := strconv.ParseUint(receiverIDStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid receiver")
 	}
 
 	// Save to database
 	msg := models.Message{
-		Username:  username,
-		Content:   content,
-		CreatedAt: time.Now(),
+		SenderID:   userID,
+		ReceiverID: uint(receiverID),
+		Content:    content,
+		CreatedAt:  time.Now(),
 	}
 	database.DB.Create(&msg)
 
-	// Build HTML fragment and broadcast
-	htmlFragment := renderMessageHTML(msg, "")
-	ChatHub.Broadcast <- []byte(htmlFragment)
+	// Load sender relation for rendering
+	database.DB.Preload("Sender").First(&msg, msg.ID)
+
+	// Render and send to both sender and receiver
+	senderHTML := renderMessageHTML(msg, userID)
+	receiverHTML := renderMessageHTML(msg, uint(receiverID))
+
+	// Send personalized HTML to each party
+	ChatHub.SendToUsers([]uint{userID}, []byte(senderHTML))
+	ChatHub.SendToUsers([]uint{uint(receiverID)}, []byte(receiverHTML))
 
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// HandleWebSocket upgrades the connection and registers the client with the hub.
+// HandleWebSocket upgrades the connection and registers the client.
 func HandleWebSocket(c *websocket.Conn) {
+	idStr := c.Cookies("user_id")
 	username := c.Cookies("username")
-	if username == "" {
+	if idStr == "" {
+		c.Close()
+		return
+	}
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
 		c.Close()
 		return
 	}
 
 	client := &ws.Client{
 		Conn:     c,
+		UserID:   uint(id),
 		Username: username,
 	}
 
@@ -80,7 +169,7 @@ func HandleWebSocket(c *websocket.Conn) {
 		ChatHub.Unregister <- client
 	}()
 
-	// Read loop — keeps the connection alive, handles client-sent messages
+	// Read loop — keeps connection alive
 	for {
 		_, _, err := c.ReadMessage()
 		if err != nil {
@@ -90,20 +179,31 @@ func HandleWebSocket(c *websocket.Conn) {
 	}
 }
 
-// renderMessageHTML builds an HTML fragment for a single chat message.
-func renderMessageHTML(msg models.Message, currentUser string) string {
-	escapedUser := html.EscapeString(msg.Username)
+// renderMessageHTML builds an HTML fragment with alignment based on viewer.
+func renderMessageHTML(msg models.Message, viewerID uint) string {
+	escapedUser := html.EscapeString(msg.Sender.Username)
 	escapedContent := html.EscapeString(msg.Content)
 	timeStr := msg.CreatedAt.Format("15:04")
 
+	isMine := msg.SenderID == viewerID
+
+	bubbleClass := "message-theirs"
+	alignClass := "justify-start"
+	if isMine {
+		bubbleClass = "message-mine"
+		alignClass = "justify-end"
+	}
+
 	return fmt.Sprintf(
-		`<div id="message-%d" class="message-bubble animate-in" hx-swap-oob="beforeend:#messages">
-			<div class="message-header">
-				<span class="message-username">%s</span>
-				<span class="message-time">%s</span>
+		`<div id="message-%d" class="flex %s animate-in" hx-swap-oob="beforeend:#messages">
+			<div class="%s">
+				<div class="message-header">
+					<span class="message-username">%s</span>
+					<span class="message-time">%s</span>
+				</div>
+				<div class="message-content">%s</div>
 			</div>
-			<div class="message-content">%s</div>
 		</div>`,
-		msg.ID, escapedUser, timeStr, escapedContent,
+		msg.ID, alignClass, bubbleClass, escapedUser, timeStr, escapedContent,
 	)
 }

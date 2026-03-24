@@ -10,13 +10,13 @@ import (
 // Client represents a connected WebSocket client.
 type Client struct {
 	Conn     *websocket.Conn
+	UserID   uint
 	Username string
 }
 
-// Hub maintains the set of active clients and broadcasts messages.
+// Hub maintains the set of active clients and delivers messages.
 type Hub struct {
 	clients    map[*Client]bool
-	Broadcast  chan []byte
 	Register   chan *Client
 	Unregister chan *Client
 	mu         sync.RWMutex
@@ -26,7 +26,6 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
-		Broadcast:  make(chan []byte, 256),
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
 	}
@@ -40,7 +39,7 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			h.clients[client] = true
 			h.mu.Unlock()
-			log.Printf("👤 Client connected: %s (total: %d)", client.Username, len(h.clients))
+			log.Printf("👤 Client connected: %s (id:%d, total: %d)", client.Username, client.UserID, len(h.clients))
 
 		case client := <-h.Unregister:
 			h.mu.Lock()
@@ -50,33 +49,39 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 			log.Printf("👤 Client disconnected: %s (total: %d)", client.Username, len(h.clients))
-
-		case message := <-h.Broadcast:
-			h.mu.RLock()
-			for client := range h.clients {
-				if err := client.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
-					log.Printf("⚠️  Write error for %s: %v", client.Username, err)
-					client.Conn.Close()
-					delete(h.clients, client)
-				}
-			}
-			h.mu.RUnlock()
 		}
 	}
 }
 
-// OnlineUsers returns the list of currently connected usernames.
-func (h *Hub) OnlineUsers() []string {
+// SendToUsers delivers a message only to clients with matching user IDs.
+func (h *Hub) SendToUsers(userIDs []uint, data []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	seen := make(map[string]bool)
-	users := []string{}
+	idSet := make(map[uint]bool, len(userIDs))
+	for _, id := range userIDs {
+		idSet[id] = true
+	}
+
 	for client := range h.clients {
-		if !seen[client.Username] {
-			seen[client.Username] = true
-			users = append(users, client.Username)
+		if idSet[client.UserID] {
+			if err := client.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+				log.Printf("⚠️  Write error for %s: %v", client.Username, err)
+				client.Conn.Close()
+				delete(h.clients, client)
+			}
 		}
 	}
-	return users
+}
+
+// OnlineUserIDs returns the set of currently connected user IDs.
+func (h *Hub) OnlineUserIDs() map[uint]bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	ids := make(map[uint]bool)
+	for client := range h.clients {
+		ids[client.UserID] = true
+	}
+	return ids
 }

@@ -29,29 +29,76 @@
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
-/* Message Bubbles */
-.message-bubble {
-    padding: 0.625rem 1rem;
-    border-radius: 0.75rem;
-    background: #161b22;
-    border: 1px solid #21262d;
-    max-width: 85%;
-    transition: background 0.2s ease;
+/* ---- Contact sidebar ---- */
+.contact-item {
+    cursor: pointer;
 }
 
-.message-bubble:hover {
-    background: #1c2128;
+.contact-active {
+    background: #1c2128 !important;
+    border-left: 3px solid #1f6feb;
+}
+
+.contact-item:hover:not(.contact-active) {
+    background: #161b22;
+}
+
+/* ---- Message Bubbles ---- */
+
+/* My messages — blue, right-aligned */
+.message-mine {
+    padding: 0.5rem 0.875rem;
+    border-radius: 1rem 1rem 0.25rem 1rem;
+    background: linear-gradient(135deg, #1f6feb, #1158c7);
+    max-width: 75%;
+    transition: transform 0.15s ease;
+}
+
+.message-mine:hover {
+    transform: scale(1.01);
+}
+
+.message-mine .message-username {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.7);
+    background-clip: unset;
+}
+
+.message-mine .message-time {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.message-mine .message-content {
+    color: #ffffff;
+}
+
+/* Partner messages — gray, left-aligned */
+.message-theirs {
+    padding: 0.5rem 0.875rem;
+    border-radius: 1rem 1rem 1rem 0.25rem;
+    background: #21262d;
+    border: 1px solid #30363d;
+    max-width: 75%;
+    transition: background 0.15s ease;
+}
+
+.message-theirs:hover {
+    background: #282e36;
 }
 
 .message-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.125rem;
 }
 
 .message-username {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 600;
     background: linear-gradient(135deg, #58a6ff, #2dd4bf);
     -webkit-background-clip: text;
@@ -67,19 +114,19 @@
 .message-content {
     font-size: 0.9375rem;
     color: #e6edf3;
-    line-height: 1.5;
+    line-height: 1.45;
     word-break: break-word;
 }
 
 /* Slide-in animation */
 .animate-in {
-    animation: slideIn 0.3s ease-out;
+    animation: slideIn 0.25s ease-out;
 }
 
 @keyframes slideIn {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(8px);
     }
     to {
         opacity: 1;
@@ -87,7 +134,7 @@
     }
 }
 
-/* Focus ring custom styles */
+/* Focus ring */
 input:focus {
     box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.2);
 }
@@ -108,4 +155,13 @@ input:focus {
 
 .animate-pulse {
     animation: gentlePulse 2s ease-in-out infinite;
+}
+
+/* Responsive: collapse sidebar on mobile */
+@media (max-width: 768px) {
+    #sidebar {
+        width: 100%;
+        position: absolute;
+        z-index: 50;
+    }
 }
