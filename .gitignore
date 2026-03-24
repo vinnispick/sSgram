@@ -1,0 +1,23 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+server
+
+# Test
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/
+
+# Env
+.env
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
