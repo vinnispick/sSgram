@@ -1,0 +1,111 @@
+/* ============================================
+   Antigram — Custom Styles
+   ============================================ */
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Safe areas for PWA */
+.safe-area-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.safe-area-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* Message Bubbles */
+.message-bubble {
+    padding: 0.625rem 1rem;
+    border-radius: 0.75rem;
+    background: #161b22;
+    border: 1px solid #21262d;
+    max-width: 85%;
+    transition: background 0.2s ease;
+}
+
+.message-bubble:hover {
+    background: #1c2128;
+}
+
+.message-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.message-username {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #58a6ff, #2dd4bf);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.message-time {
+    font-size: 0.6875rem;
+    color: #484f58;
+}
+
+.message-content {
+    font-size: 0.9375rem;
+    color: #e6edf3;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+/* Slide-in animation */
+.animate-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Focus ring custom styles */
+input:focus {
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.2);
+}
+
+/* Gradient text utility */
+.gradient-text {
+    background: linear-gradient(135deg, #58a6ff, #2dd4bf);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Pulse animation for online indicator */
+@keyframes gentlePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.animate-pulse {
+    animation: gentlePulse 2s ease-in-out infinite;
+}

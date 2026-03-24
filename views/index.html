@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Antigram — Login</title>
+
+    <!-- PWA Meta -->
+    <meta name="theme-color" content="#1a1a2e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Antigram" />
+    <link rel="apple-touch-icon" href="/public/icons/icon-192.png" />
+    <link rel="manifest" href="/public/manifest.json" />
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 900: '#0d1117', 800: '#161b22', 700: '#21262d', 600: '#30363d' },
+                        accent: { 400: '#58a6ff', 500: '#1f6feb', 600: '#1158c7' },
+                        teal: { 400: '#2dd4bf', 500: '#14b8a6' }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="/public/css/style.css" />
+</head>
+<body class="bg-dark-900 min-h-screen flex items-center justify-center p-4">
+
+    <!-- Animated background -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute -top-40 -right-40 w-80 h-80 bg-accent-500/10 rounded-full blur-3xl animate-pulse"></div>
+        <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl animate-pulse" style="animation-delay: 1s;"></div>
+    </div>
+
+    <div class="relative z-10 w-full max-w-md">
+        <!-- Logo -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-accent-500 to-teal-500 mb-4 shadow-lg shadow-accent-500/25">
+                <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+            </div>
+            <h1 class="text-3xl font-bold text-white tracking-tight">Antigram</h1>
+            <p class="text-gray-400 mt-2">Real-time messenger</p>
+        </div>
+
+        <!-- Login card -->
+        <div class="bg-dark-800 border border-dark-600 rounded-2xl p-8 shadow-2xl backdrop-blur-sm">
+            <form action="/login" method="POST" class="space-y-6">
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-300 mb-2">Username</label>
+                    <input
+                        type="text"
+                        id="username"
+                        name="username"
+                        required
+                        minlength="2"
+                        maxlength="32"
+                        placeholder="Enter your name..."
+                        autocomplete="username"
+                        class="w-full px-4 py-3 bg-dark-700 border border-dark-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-all duration-200"
+                    />
+                </div>
+
+                <button
+                    type="submit"
+                    id="login-btn"
+                    class="w-full py-3 px-4 bg-gradient-to-r from-accent-500 to-teal-500 hover:from-accent-600 hover:to-teal-400 text-white font-semibold rounded-xl shadow-lg shadow-accent-500/25 hover:shadow-accent-500/40 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
+                >
+                    Join Chat →
+                </button>
+            </form>
+        </div>
+
+        <p class="text-center text-gray-600 text-sm mt-6">
+            No registration needed — just pick a name.
+        </p>
+    </div>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/public/service-worker.js');
+        }
+    </script>
+</body>
+</html>
