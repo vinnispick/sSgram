@@ -132,15 +132,14 @@ func SendMessage(c *fiber.Ctx) error {
 	// Load sender relation for rendering
 	database.DB.Preload("Sender").First(&msg, msg.ID)
 
-	// Render and send to both sender and receiver
-	senderHTML := renderMessageHTML(msg, userID)
-	receiverHTML := renderMessageHTML(msg, uint(receiverID))
-
-	// Send personalized HTML to each party
-	ChatHub.SendToUsers([]uint{userID}, []byte(senderHTML))
+	// Send to receiver via WebSocket (with OOB for auto-append)
+	receiverHTML := renderMessageHTMLOOB(msg, uint(receiverID))
 	ChatHub.SendToUsers([]uint{uint(receiverID)}, []byte(receiverHTML))
 
-	return c.SendStatus(fiber.StatusNoContent)
+	// Return sender's own bubble via HTMX response
+	senderHTML := renderMessageHTML(msg, userID)
+	c.Set("Content-Type", "text/html")
+	return c.SendString(senderHTML)
 }
 
 // HandleWebSocket upgrades the connection and registers the client.
@@ -180,7 +179,16 @@ func HandleWebSocket(c *websocket.Conn) {
 }
 
 // renderMessageHTML builds an HTML fragment with alignment based on viewer.
+// If oob is true, adds hx-swap-oob for WebSocket delivery.
 func renderMessageHTML(msg models.Message, viewerID uint) string {
+	return buildMessageHTML(msg, viewerID, false)
+}
+
+func renderMessageHTMLOOB(msg models.Message, viewerID uint) string {
+	return buildMessageHTML(msg, viewerID, true)
+}
+
+func buildMessageHTML(msg models.Message, viewerID uint, oob bool) string {
 	escapedUser := html.EscapeString(msg.Sender.Username)
 	escapedContent := html.EscapeString(msg.Content)
 	timeStr := msg.CreatedAt.Format("15:04")
@@ -194,8 +202,13 @@ func renderMessageHTML(msg models.Message, viewerID uint) string {
 		alignClass = "justify-end"
 	}
 
+	oobAttr := ""
+	if oob {
+		oobAttr = ` hx-swap-oob="beforeend:#messages"`
+	}
+
 	return fmt.Sprintf(
-		`<div id="message-%d" class="flex %s animate-in" hx-swap-oob="beforeend:#messages">
+		`<div id="message-%d" class="flex %s animate-in"%s>
 			<div class="%s">
 				<div class="message-header">
 					<span class="message-username">%s</span>
@@ -204,6 +217,6 @@ func renderMessageHTML(msg models.Message, viewerID uint) string {
 				<div class="message-content">%s</div>
 			</div>
 		</div>`,
-		msg.ID, alignClass, bubbleClass, escapedUser, timeStr, escapedContent,
+		msg.ID, alignClass, oobAttr, bubbleClass, escapedUser, timeStr, escapedContent,
 	)
 }
