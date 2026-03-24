@@ -32,6 +32,44 @@ func getCurrentUser(c *fiber.Ctx) (uint, string) {
 	return uint(id), username
 }
 
+// ContactView is a UI-specific representation of a contact.
+type ContactView struct {
+	ID            uint
+	Username      string
+	Online        bool
+	UnreadCount   int64
+	LastMessageAt *time.Time
+}
+
+// getContactViews fetches the list of contacts with unread counts and sorting.
+func getContactViews(userID uint) ([]ContactView, error) {
+	var contactViews []ContactView
+
+	// Updated query: LEFT JOIN messages, sort by newest message first.
+	// We count unread messages sent FROM the contact TO the current user.
+	err := database.DB.Table("users").
+		Select("users.id, users.username, "+
+			"COUNT(DISTINCT CASE WHEN m.receiver_id = ? AND m.sender_id = users.id AND m.is_read = false THEN m.id END) as unread_count, "+
+			"MAX(m.created_at) as last_message_at", userID).
+		Joins("LEFT JOIN messages m ON (m.sender_id = users.id AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = users.id)", userID, userID).
+		Where("users.id != ?", userID).
+		Group("users.id, users.username").
+		Order("last_message_at DESC NULLS LAST, users.username ASC").
+		Scan(&contactViews).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Update online status from WebSocket hub
+	onlineIDs := ChatHub.OnlineUserIDs()
+	for i := range contactViews {
+		contactViews[i].Online = onlineIDs[contactViews[i].ID]
+	}
+
+	return contactViews, nil
+}
+
 // ShowChat renders the main layout with contact sidebar.
 func ShowChat(c *fiber.Ctx) error {
 	userID, username := getCurrentUser(c)
@@ -39,36 +77,31 @@ func ShowChat(c *fiber.Ctx) error {
 		return c.Redirect("/")
 	}
 
-	type ContactView struct {
-		ID            uint
-		Username      string
-		Online        bool
-		UnreadCount   int64
-		LastMessageAt time.Time
-	}
-
-	var contactViews []ContactView
-
-	// Query to get contacts with unread counts and last message time
-	// We use a subquery/join approach to get all users and their interaction status with the current user
-	database.DB.Table("users").
-		Select("users.id, users.username, "+
-			"(SELECT COUNT(*) FROM messages WHERE messages.receiver_id = ? AND messages.sender_id = users.id AND messages.is_read = false) as unread_count, "+
-			"(SELECT MAX(created_at) FROM messages WHERE (messages.sender_id = ? AND messages.receiver_id = users.id) OR (messages.sender_id = users.id AND messages.receiver_id = ?)) as last_message_at",
-			userID, userID, userID).
-		Where("users.id != ?", userID).
-		Order("unread_count DESC, last_message_at DESC").
-		Scan(&contactViews)
-
-	// Get online user IDs
-	onlineIDs := ChatHub.OnlineUserIDs()
-	for i := range contactViews {
-		contactViews[i].Online = onlineIDs[contactViews[i].ID]
+	contactViews, err := getContactViews(userID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("Error loading contacts")
 	}
 
 	return c.Render("chat", fiber.Map{
 		"UserID":   userID,
 		"Username": username,
+		"Contacts": contactViews,
+	})
+}
+
+// GetContacts returns the HTMX sidebar partial.
+func GetContacts(c *fiber.Ctx) error {
+	userID, _ := getCurrentUser(c)
+	if userID == 0 {
+		return c.Status(fiber.StatusUnauthorized).SendString("Not logged in")
+	}
+
+	contactViews, err := getContactViews(userID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("Error loading contacts")
+	}
+
+	return c.Render("contacts", fiber.Map{
 		"Contacts": contactViews,
 	})
 }
@@ -85,10 +118,17 @@ func ShowConversation(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString("Invalid user ID")
 	}
 
-	// Mark messages as read
-	database.DB.Model(&models.Message{}).
-		Where("receiver_id = ? AND sender_id = ? AND is_read = false", userID, partnerID).
+	// Mark messages from partner TO me as read
+	result := database.DB.Table("messages").
+		Where("receiver_id = ? AND sender_id = ? AND is_read = false", userID, uint(partnerID)).
 		Update("is_read", true)
+
+	if result.Error != nil {
+		log.Printf("❌ Error marking messages as read: %v", result.Error)
+	}
+
+	// Trigger sidebar refresh for the current user via HTMX header
+	c.Set("HX-Trigger", "refreshSidebar")
 
 	// Get partner info
 	var partner models.User
@@ -146,6 +186,8 @@ func SendMessage(c *fiber.Ctx) error {
 
 	// Send to receiver via WebSocket (with OOB for auto-append)
 	receiverHTML := renderMessageHTMLOOB(msg, uint(receiverID))
+	// Add a hidden trigger to refresh receiver's sidebar
+	receiverHTML += `<div hx-swap-oob="afterbegin:body"><div hx-trigger="load" hx-get="/contacts" hx-target="#contact-list" hx-swap="innerHTML" class="hidden"></div></div>`
 	ChatHub.SendToUsers([]uint{uint(receiverID)}, []byte(receiverHTML))
 
 	// Return sender's own bubble via HTMX response
