@@ -23,7 +23,14 @@
                     <span class="message-username">{{.Sender.Username}}</span>
                     <span class="message-time">{{.CreatedAt.Format "15:04"}}</span>
                 </div>
-                <div class="message-content">{{.Content}}</div>
+                <div class="message-content">
+                    {{if .ImageUrl}}
+                    <img src="{{.ImageUrl}}" class="max-w-xs rounded-lg shadow-md my-2 object-contain"/>
+                    {{if .Content}}<br>{{.Content}}{{end}}
+                    {{else}}
+                    {{.Content}}
+                    {{end}}
+                </div>
             </div>
         </div>
         {{end}}
@@ -37,27 +44,32 @@
           hx-target="#messages"
           hx-swap="beforeend"
           hx-on::after-request="this.reset(); document.getElementById('msg-input').focus();"
-          class="max-w-3xl mx-auto flex gap-3">
+          class="max-w-3xl mx-auto flex gap-3 items-center">
         <input type="hidden" name="receiver_id" value="{{.PartnerID}}" />
-        <input
-            type="text"
-            id="msg-input"
-            name="content"
-            required
-            autocomplete="off"
-            placeholder="Write a message..."
-            class="flex-1 px-4 py-3 bg-dark-700 border border-dark-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-all duration-200"
-        />
-        <button
-            type="submit"
-            id="send-btn"
-            class="px-5 py-3 bg-gradient-to-r from-accent-500 to-teal-500 hover:from-accent-600 hover:to-teal-400 text-white font-semibold rounded-xl shadow-lg shadow-accent-500/25 hover:shadow-accent-500/40 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
-        >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+        <label class="flex items-center justify-center cursor-pointer text-gray-400 hover:text-white transition-colors px-3 py-3 bg-dark-700 rounded-xl hover:bg-dark-600 shadow-sm">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
             </svg>
-        </button>
+            <input type="file" name="image" class="hidden" hx-post="/upload" hx-trigger="change" hx-target="#messages" hx-swap="beforeend" hx-encoding="multipart/form-data" hx-include="[name='receiver_id']" hx-on::after-request="this.value=''">
+        </label>
+        <input
+                type="text"
+                id="msg-input"
+                name="content"
+                autocomplete="off"
+                placeholder="Write a message..."
+                class="flex-1 px-4 py-3 bg-dark-700 border border-dark-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent transition-all duration-200"
+            />
+            <button
+                type="submit"
+                id="send-btn"
+                class="px-5 py-3 bg-gradient-to-r from-accent-500 to-teal-500 hover:from-accent-600 hover:to-teal-400 text-white font-semibold rounded-xl shadow-lg shadow-accent-500/25 hover:shadow-accent-500/40 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+            </button>
     </form>
 </div>
 

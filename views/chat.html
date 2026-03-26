@@ -133,6 +133,11 @@
             });
         });
 
+        // Debugging websocket messages
+        document.body.addEventListener('htmx:wsAfterMessage', function(e) {
+            console.log("New message received:", e.detail.message);
+        });
+
         // Register service worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/public/service-worker.js');
