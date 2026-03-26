@@ -26,7 +26,14 @@ func Login(c *fiber.Ctx) error {
 
 	if username == "" || password == "" {
 		if c.Get("HX-Request") != "" {
-			return c.Status(fiber.StatusBadRequest).SendString("Username and password required")
+			return c.SendString(`<div id="error-message" class="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded-lg text-sm mb-4 animate-pulse">Username and password required</div>`)
+		}
+		return c.Redirect("/")
+	}
+
+	if len(username) < 2 || len(username) > 32 {
+		if c.Get("HX-Request") != "" {
+			return c.SendString(`<div id="error-message" class="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded-lg text-sm mb-4 animate-pulse">Username must be between 2 and 32 characters</div>`)
 		}
 		return c.Redirect("/")
 	}
