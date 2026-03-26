@@ -276,6 +276,15 @@ func buildMessageHTML(msg models.Message, viewerID uint, oob bool) string {
 			contentHTML = imgTag
 		}
 	}
+	if msg.AudioUrl != "" {
+		escapedAudio := html.EscapeString(msg.AudioUrl)
+		audioTag := fmt.Sprintf(`<audio controls src="%s" class="max-w-xs my-2"></audio>`, escapedAudio)
+		if contentHTML != "" {
+			contentHTML = contentHTML + "<br>" + audioTag
+		} else {
+			contentHTML = audioTag
+		}
+	}
 
 	return fmt.Sprintf(
 		`<div id="message-%d" class="flex %s animate-in"%s>
@@ -345,6 +354,67 @@ func UploadImage(c *fiber.Ctx) error {
 	// Broadcast to receiver via WebSocket
 	receiverHTML := renderMessageHTMLOOB(msg, uint(receiverID))
 	// Add trigger to refresh receiver's sidebar automatically
+	receiverHTML += `<div hx-swap-oob="afterbegin:body"><div hx-trigger="load" hx-get="/contacts" hx-target="#contact-list" hx-swap="innerHTML" class="hidden"></div></div>`
+	ChatHub.SendToUsers([]uint{uint(receiverID)}, []byte(receiverHTML))
+
+	// Return sender's own bubble via HTMX response
+	senderHTML := renderMessageHTML(msg, userID)
+	c.Set("Content-Type", "text/html")
+	return c.SendString(senderHTML)
+}
+
+// UploadAudio handles voice message uploads, creating an instant message and broadcasting it.
+func UploadAudio(c *fiber.Ctx) error {
+	userID, _ := getCurrentUser(c)
+	if userID == 0 {
+		return c.Status(fiber.StatusUnauthorized).SendString("Not logged in")
+	}
+
+	receiverIDStr := c.FormValue("receiver_id")
+	if receiverIDStr == "" {
+		return c.Status(fiber.StatusBadRequest).SendString("Missing receiver ID")
+	}
+	receiverID, err := strconv.ParseUint(receiverIDStr, 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid receiver ID")
+	}
+
+	file, err := c.FormFile("audio")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString("Upload failed")
+	}
+
+	// Generate UUID filename (assuming .webm for audio blobs)
+	filename := uuid.New().String() + ".webm"
+	
+	// Ensure directory exists
+	if err := os.MkdirAll("./uploads", 0755); err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("Error saving file")
+	}
+
+	savePath := "./uploads/" + filename
+	if err := c.SaveFile(file, savePath); err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("Error saving file")
+	}
+
+	audioUrl := "/uploads/" + filename
+
+	// Save to database
+	msg := models.Message{
+		SenderID:   userID,
+		ReceiverID: uint(receiverID),
+		Content:    "Sent a voice message",
+		AudioUrl:   audioUrl,
+		IsRead:     false,
+		CreatedAt:  time.Now(),
+	}
+	database.DB.Create(&msg)
+
+	// Load sender relation for rendering
+	database.DB.Preload("Sender").First(&msg, msg.ID)
+
+	// Broadcast to receiver via WebSocket
+	receiverHTML := renderMessageHTMLOOB(msg, uint(receiverID))
 	receiverHTML += `<div hx-swap-oob="afterbegin:body"><div hx-trigger="load" hx-get="/contacts" hx-target="#contact-list" hx-swap="innerHTML" class="hidden"></div></div>`
 	ChatHub.SendToUsers([]uint{uint(receiverID)}, []byte(receiverHTML))
 

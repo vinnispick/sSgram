@@ -26,9 +26,12 @@
                 <div class="message-content">
                     {{if .ImageUrl}}
                     <img src="{{.ImageUrl}}" class="max-w-xs rounded-lg shadow-md my-2 object-contain"/>
-                    {{if .Content}}<br>{{.Content}}{{end}}
-                    {{else}}
-                    {{.Content}}
+                    {{end}}
+                    {{if .AudioUrl}}
+                    <audio controls src="{{.AudioUrl}}" class="max-w-xs my-2"></audio>
+                    {{end}}
+                    {{if .Content}}
+                    {{if or .ImageUrl .AudioUrl}}<br>{{end}}{{.Content}}
                     {{end}}
                 </div>
             </div>
@@ -46,12 +49,17 @@
           hx-on::after-request="this.reset(); document.getElementById('msg-input').focus();"
           class="max-w-3xl mx-auto flex gap-3 items-center">
         <input type="hidden" name="receiver_id" value="{{.PartnerID}}" />
-        <label class="flex items-center justify-center cursor-pointer text-gray-400 hover:text-white transition-colors px-3 py-3 bg-dark-700 rounded-xl hover:bg-dark-600 shadow-sm">
+        <label class="flex items-center justify-center cursor-pointer text-gray-400 hover:text-white transition-colors px-3 py-3 bg-dark-700 rounded-xl hover:bg-dark-600 shadow-sm" title="Upload Image">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
             </svg>
             <input type="file" name="image" class="hidden" hx-post="/upload" hx-trigger="change" hx-target="#messages" hx-swap="beforeend" hx-encoding="multipart/form-data" hx-include="[name='receiver_id']" hx-on::after-request="this.value=''">
         </label>
+        <button type="button" id="record-btn" class="flex items-center justify-center cursor-pointer text-gray-400 hover:text-red-500 transition-colors px-3 py-3 bg-dark-700 rounded-xl hover:bg-dark-600 shadow-sm" title="Record Voice">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+            </svg>
+        </button>
         <input
                 type="text"
                 id="msg-input"
@@ -98,4 +106,67 @@
 
     // Focus input
     document.getElementById('msg-input').focus();
+
+    // Voice Recording Logic
+    let mediaRecorder;
+    let audioChunks = [];
+    const recordBtn = document.getElementById('record-btn');
+    const receiverId = document.querySelector('input[name="receiver_id"]').value;
+    let isRecording = false;
+
+    recordBtn.addEventListener('click', async () => {
+        if (!isRecording) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.addEventListener("dataavailable", event => {
+                    audioChunks.push(event.data);
+                });
+
+                mediaRecorder.addEventListener("stop", () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const formData = new FormData();
+                    formData.append("audio", audioBlob, "voice.webm");
+                    formData.append("receiver_id", receiverId);
+
+                    // Send to backend via fetch
+                    fetch('/upload-audio', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.text())
+                    .then(html => {
+                        // Append the sender's HTML returned from the server to avoid WebSocket echo issues
+                        const messagesDiv = document.getElementById('messages');
+                        messagesDiv.insertAdjacentHTML('beforeend', html);
+                        
+                        // Process HTMX elements in new HTML if any (needed for standard HTMX behavior)
+                        htmx.process(messagesDiv);
+                        scrollToBottom();
+                    })
+                    .catch(error => {
+                        console.error("Audio upload failed:", error);
+                    });
+                    
+                    // Release tracks
+                    stream.getTracks().forEach(track => track.stop());
+                });
+
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.classList.remove('text-gray-400');
+                recordBtn.classList.add('text-red-500', 'animate-pulse');
+            } catch(e) {
+                console.error("Microphone access denied or error:", e);
+                alert("Could not access microphone");
+            }
+        } else {
+            mediaRecorder.stop();
+            isRecording = false;
+            recordBtn.classList.add('text-gray-400');
+            recordBtn.classList.remove('text-red-500', 'animate-pulse');
+        }
+    });
 </script>

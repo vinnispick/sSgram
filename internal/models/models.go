@@ -17,6 +17,7 @@ type Message struct {
 	ReceiverID uint      `gorm:"not null;index" json:"receiver_id"`
 	Content    string    `gorm:"type:text;not null" json:"content"`
 	ImageUrl   string    `json:"image_url"`
+	AudioUrl   string    `json:"audio_url"`
 	IsRead     bool      `gorm:"default:false;not null" json:"is_read"`
 	CreatedAt  time.Time `json:"created_at"`
 
